@@ -1,2 +1,2 @@
 # mlsipy
-Machine Learning for Spectral Imaging
+Python package for spectral imaging data analysis based on machine learning
