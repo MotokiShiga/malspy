@@ -1,2 +1,2 @@
-# mlsipy
-Python package for spectral imaging data analysis based on machine learning
+# MALSpy
+Python package for MAchine Learning based Spectral imaging data analysis
