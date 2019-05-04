@@ -1,6 +1,8 @@
 # MALSpy
 Python package for MAchine Learning based Spectral imaging data analysis
 
+<b>Author</b>: Motoki Shiga (shiga_m at gifu-u.ac.jp)
+
 This package provides major spectral imaging analysis methods based on machine learning such as SVD, PCA, VCA<sup>[1]</sup>, NMF<sup>[2]</sup>, NMF-SO<sup>[3]</sup>, NMF-ARD-SO<sup>[3]</sup>. Please see demo (example/demo.ipynb).
 
 <b>Reference:</b><br>
