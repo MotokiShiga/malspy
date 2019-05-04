@@ -105,3 +105,6 @@ venv.bak/
 
 # Visual Studio code
 .vscode/
+
+# test code and data
+mytest/
