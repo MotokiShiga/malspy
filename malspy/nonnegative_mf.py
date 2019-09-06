@@ -12,56 +12,32 @@ import matplotlib.pyplot as plt
 
 from .matrix_factorization import RandomMF
 
-
 class NMF(RandomMF):
     """Non-Negative Matrix Factorization (NMF)
 
     Parameters
     ----------
-    n_components : int or None
+    n_components : int
         The number of components
-    reps : int, default 3
+    reps : int, optional (default = 3)
         The number of initializations
-    max_itr : int, default 200
+    max_itr : int, optional (default = 200)
         The maximum number of update iterations
-    min_itr : int, default 10
+    min_itr : int, optional (default = 10)
         The minimum number of update iterations
-    flag_nonneg: Boolean, default True
-        If False, spectrum intensities can be negative values
-    random_seed : int, default 0
+    random_seed : int, optional (default = 0)
         Random number generator seed control
 
     Attributes
     ----------
-    C_ : array-like of shape (# of spatial data points, n_components)
-        Component intensities decomposed from data matrix X
-    S_ : array-like of shape (# of spectrum channels, n_components)
-        Spectra decomposed from data matrix X
-    obj_fun_ : array-like of shape (iterations)
+    C_ : ndarray of shape = (# of spatial data points, n_components)
+        Spatial intensity distributions of factorized components
+    S_ : ndarray of shape = (# of spectrum channels, n_components)
+        Factorized component spectra
+    E_ : ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis)
+        Residual spatial image (spatial image of RSME)
+    obj_fun_ : ndarray of shape = (# of iterations)
         Learning curve of reconstruction error (Mean Squared Error)
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> X = np.array([[1,1], [2, 1], [3, 1.2], [4, 1], [5, 0.8], [6, 1]])
-    >>> model = NMF(n_components=2)
-    >>> model.fit(X)
-    Training NMF model....
-    1th iteration of NMF algorithm
-    2th iteration of NMF algorithm
-    3th iteration of NMF algorithm
-
-    NMF(n_components=2, reps=3, max_itr=100, random_seed=0)
-    >>> model.C_
-    array([[ 0.        ,  0.40549951],
-       [ 0.13374645,  0.40555886],
-       [ 0.24076597,  0.48667235],
-       [ 0.40131387,  0.4055646 ],
-       [ 0.56186177,  0.32445684],
-       [ 0.66888128,  0.40557034]])
-    >>> model.S_
-    array([[ 7.47464589,  2.46643616],
-       [ 0.        ,  2.4657656 ]])
 
     References
     ----------
@@ -70,13 +46,11 @@ class NMF(RandomMF):
         IEICE transactions on fundamentals of electronics, communications and computer sciences 92 (3), 708-721, 2009.
     """
 
-    # constructor
-    def __init__(self, n_components, reps=3, max_itr=100, min_itr=10, random_seed=0, flag_nonneg=True):
+    def __init__(self, n_components, reps=3, max_itr=100, min_itr=10, random_seed=0):
         super(NMF, self).__init__(n_components=n_components, random_seed=random_seed)
         self.reps = reps
         self.max_itr = max_itr
         self.min_itr = min_itr
-        self.flag_nonneg = flag_nonneg
 
     def __repr__(self):
         class_name = self.__class__.__name__
@@ -90,24 +64,29 @@ class NMF(RandomMF):
         return txt
 
     def fit(self, X, channel_vals=None, unit_name=None):
-        """ Learn a NMF model for spectrum imaging X.
+        """ Optimize a NMF model for spectrum imaging X
+
+        Two matrices C_ and S_ are optimized by the HALS algorithm.
 
         Parameters
         ----------
-        X: array-like of shape (# of spatial data points of x, # of y, # of spectrum channels)
+        X: ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis, # of spectrum channels)
             Data matrix to be decomposed
-        channel_vals: array-like of shape (# of spectrum channels, )
-            The sequence of channel numbers, or unit values
-        unit_name: string
-            The unit of the spectrum channel
+        channel_vals: ndarray of shape = (# of spectrum channels), optional (default = None)
+            The sequence of channel values
+        unit_name: string, optional (default = None)
+            The unit name of spectrum channel
 
         Returns
         -------
-        self: instance of class RandomMF
+        self: instance of class NMF
 
         """
 
-        # --- Attribute initialization from a data matrix------
+        # tiny value (Machine limits for floating point types)
+        eps = np.finfo(np.float64).eps
+
+        # initialize attributes from the given spectrum imaging data
         if X.ndim == 2:
             self.num_y = 1
             self.num_x, self.num_ch = X.shape
@@ -115,8 +94,7 @@ class NMF(RandomMF):
         else:
             self.num_x, self.num_y, self.num_ch = X.shape
             self.num_xy = self.num_x * self.num_y
-            # transform from 3D-array to 2D-array (Data Matrix)
-            X = X.reshape(self.num_xy, self.num_ch)
+            X = X.reshape(self.num_xy, self.num_ch) # transform from 3D-array to 2D-array (Data Matrix)
 
         if channel_vals is None:
             self.channel_vals = np.arange(self.num_ch)
@@ -128,7 +106,7 @@ class NMF(RandomMF):
             self.unit_name = unit_name
 
         obj_best = np.inf
-        random.seed(self.random_seed)  # set the random seed
+        random.seed(self.random_seed)  # set random seed
         print('Training NMF model....')
         for rep in range(self.reps):
             print(str(rep + 1) + 'th iteration of NMF algorithm')
@@ -137,7 +115,7 @@ class NMF(RandomMF):
             obj = np.zeros(self.max_itr)
             C = np.ones((self.num_xy, self.n_components))
             for j in range(self.n_components):
-                C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]) + 1e-16)
+                C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]) + eps)
             cj = np.sum(C, axis=1)
             i = np.random.choice(self.num_xy, self.n_components)
             S = X[i, :].T
@@ -149,8 +127,7 @@ class NMF(RandomMF):
                 C2 = C.T @ C
                 for j in range(self.n_components):
                     S[:, j] = XC[:, j] - S @ C2[:, j] + C2[j, j] * S[:, j]
-                    if self.flag_nonneg:
-                        S[:, j] = (S[:, j] + np.abs(S[:, j])) / 2  # replace negative values with zeros
+                    S[:, j] = (S[:, j] + np.abs(S[:, j])) / 2  # replace negative values with zeros
 
                 # update C
                 XS = X @ S
@@ -159,7 +136,7 @@ class NMF(RandomMF):
                     cj = cj - C[:, j]
                     C[:, j] = XS[:, j] - C @ S2[:, j] + S2[j, j] * C[:, j]
                     C[:, j] = (C[:, j] + np.abs(C[:, j])) / 2  # replace negative values with zeros
-                    C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]))  # normalize
+                    C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]+eps))  # normalize
                     cj = cj + C[:, j]
 
                 # cost function (reconstruction error)
@@ -181,18 +158,23 @@ class NMF(RandomMF):
                 S_best = S.copy()
 
         self.C_, self.S_, self.obj_fun_ = C_best, S_best, obj_fun_best
+
+        # residual spatial image (spatial image of RSME)
+        self.E_ = np.sqrt( np.mean((X - self.C_@self.S_.T)**2, axis=1) )
+        self.E_ = self.E_.reshape(self.num_x, self.num_y)
+
         return self
 
     def plot_object_fun(self, figsize=None, filename=None):
-        """
-        Plot learning curve (#iterations vs object function (error function))
+        """ Plot learning curve (#iterations vs object function (error function))
 
         Parameters
         ----------
-        figsize: sequence of two ints
-            the vertical and horizontal size of the figure
-        filename: string
-            file name of an output image
+        figsize: list of shape = (the size of horizontal axis, that of vertical axis), optional (default = None)
+            Size of horizontal axis and vertical axis of figure
+        filename: string, optional (default = None)
+            The name of an output image data
+            If None, the image is not saved to a file. 
         """
 
         if figsize is None:
@@ -200,7 +182,7 @@ class NMF(RandomMF):
         else:
             plt.figure(figsize=figsize)
         plt.plot(self.obj_fun_)
-        plt.xlabel('Iterations')
+        plt.xlabel('The number of iterations')
         plt.xlim([1, len(self.obj_fun_)-1])
         plt.ylabel('Object function')
         plt.grid()
@@ -208,60 +190,38 @@ class NMF(RandomMF):
         if filename is None:
             plt.show()
         else:
-            plt.savefig(filename)
+            plt.savefig(filename, bbox_inches='tight', pad_inches=0)
+            plt.close()
 
 class NMF_SO(NMF):
     """Non-Negative Matrix Factorization with Soft orthogonality penalty (NMF-SO)
 
     Parameters
     ----------
-    n_components : int or None
+    n_components : int
         The number of components
-    wo : float, default 0.1
+    wo : float, optional (default = 0.1)
         Weight of orthogonal penalty.
         The value should be between 0 and 1.
-    reps : int, default 3
+    reps : int, optional (default = 3)
         The number of initializations
-    max_itr : int, default 200
-        The number of update iterations
-    min_itr : int, default 10
+    max_itr : int, optional (default = 200)
+        The maximum number of update iterations
+    min_itr : int, optional (default = 10)
         The minimum number of update iterations
-    flag_nonneg: Boolean, default True
-        If False, spectrum intensities can be negative values
-    random_seed : int, default 0
+    random_seed : int, optional (default = 0)
         Random number generator seed control
 
     Attributes
     ----------
-    C_ : array-like of shape(#spatial data points, n_components)
-        Component intensities decomposed from data matrix X
-    S_ : array-like of shape(#spectrum channels, n_components)
-        Spectra decomposed from data matrix X
-    obj_fun_ : array-like of shape(#iterations,)
+    C_ : ndarray of shape = (# of spatial data points, n_components)
+        Spatial intensity distributions of factorized components
+    S_ : ndarray of shape = (# of spectrum channels, n_components)
+        Factorized component spectra
+    E_ : ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis)
+        Residual spatial image (spatial image of RSME)
+    obj_fun_ : ndarray of shape = (# of iterations)
         Learning curve of reconstruction error (Mean Squared Error)
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> X = np.array([[1,1], [2, 1], [3, 1.2], [4, 1], [5, 0.8], [6, 1]])
-    >>> model = NMF_SO(n_components=2, wo = 0.1)
-    >>> model.fit(X)
-    Training NMF with Soft Orthogonal constraint....
-    1th iteration of NMF-SO algorithm
-    2th iteration of NMF-SO algorithm
-    3th iteration of NMF-SO algorithm
-
-    NMF_SO(n_components=2, wo=0.1, reps=3, max_itr=100, random_seed=0)
-    >>> model.C_
-    array([[ 0.        ,  0.30547946],
-       [ 0.        ,  0.51238139],
-       [ 0.        ,  0.73899883],
-       [ 0.33013316,  0.31309478],
-       [ 0.60391616,  0.        ],
-       [ 0.72546355,  0.        ]])
-    >>> model.S_
-    array([[ 8.28515563,  3.94337313],
-       [ 1.34447182,  1.87880282]])
 
     References
     ----------
@@ -273,14 +233,13 @@ class NMF_SO(NMF):
     """
 
     # constructor
-    def __init__(self, n_components, wo=0.1, reps=3, max_itr=100, min_itr=10, random_seed=0, flag_nonneg=True):
+    def __init__(self, n_components, wo=0.1, reps=3, max_itr=100, min_itr=10, random_seed=0):
         super(NMF_SO, self).__init__(
             n_components=n_components,
             reps=reps,
             max_itr=max_itr,
             min_itr=min_itr,
-            random_seed=random_seed,
-            flag_nonneg=flag_nonneg)
+            random_seed=random_seed)
         self.wo = wo
 
     def __repr__(self):
@@ -299,20 +258,23 @@ class NMF_SO(NMF):
 
         Parameters
         ----------
-        X: array-like of shape(#spatial data points of x, #that of y, #spectrum channels)
+        X: ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis, # of spectrum channels)
             Data matrix to be decomposed
-        channel_vals: array-like of shape(#spectrum channels, )
-            The sequence of channel numbers, or unit values
-        unit_name: string
-            The unit of the spectrum channel
+        channel_vals: ndarray of shape = (# of spectrum channels), optional (default = None)
+            The sequence of channel values
+        unit_name: string, optional (default = None)
+            The unit name of spectrum channel
 
         Returns
         -------
-        self: instance of class RandomMF
+        self: instance of class NMF_SO
 
         """
 
-        # --- Attribute initialization from a data matrix------
+        # tiny value (Machine limits for floating point types)
+        eps = np.finfo(np.float64).eps
+
+        # initialize attributes from the given spectrum imaging data
         if X.ndim == 2:
             self.num_y = 1
             self.num_x, self.num_ch = X.shape
@@ -320,8 +282,7 @@ class NMF_SO(NMF):
         else:
             self.num_x, self.num_y, self.num_ch = X.shape
             self.num_xy = self.num_x * self.num_y
-            # transform from 3D-array to 2D-array (Data Matrix)
-            X = X.reshape(self.num_xy, self.num_ch)
+            X = X.reshape(self.num_xy, self.num_ch) # transform from 3D-array to 2D-array (Data Matrix)
 
         if channel_vals is None:
             self.channel_vals = np.arange(self.num_ch)
@@ -334,7 +295,7 @@ class NMF_SO(NMF):
 
         obj_best = np.inf
         random.seed(self.random_seed)  # set the random seed
-        print('Training NMF with Soft Orthogonal constraint....')
+        print('Training NMF with soft orthogonal constraint....')
         for rep in range(self.reps):
             print(str(rep + 1) + 'th iteration of NMF-SO algorithm')
 
@@ -342,7 +303,7 @@ class NMF_SO(NMF):
             obj = np.zeros(self.max_itr)
             C = np.ones((self.num_xy, self.n_components))
             for j in range(self.n_components):
-                C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]) + 1e-16)
+                C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]) + eps)
             cj = np.sum(C, axis=1)
             i = np.random.choice(self.num_xy, self.n_components)
             S = X[i, :].T
@@ -354,8 +315,7 @@ class NMF_SO(NMF):
                 C2 = C.T @ C
                 for j in range(self.n_components):
                     S[:, j] = XC[:, j] - S @ C2[:, j] + C2[j, j] * S[:, j]
-                    if self.flag_nonneg:
-                        S[:, j] = (S[:, j] + np.abs(S[:, j])) / 2  # replace negative values with zeros
+                    S[:, j] = (S[:, j] + np.abs(S[:, j])) / 2  # replace negative values with zeros
 
                 # update C
                 XS = X @ S
@@ -365,7 +325,7 @@ class NMF_SO(NMF):
                     C[:, j] = XS[:, j] - C @ S2[:, j] + S2[j, j] * C[:, j]
                     C[:, j] = C[:, j] - self.wo * (cj.T @ C[:, j]) / (cj.T @ cj) * cj
                     C[:, j] = (C[:, j] + np.abs(C[:, j])) / 2  # replace negative values with zeros
-                    C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]))  # normalize
+                    C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j] + eps))  # normalize
                     cj = cj + C[:, j]
 
                 # cost function
@@ -387,6 +347,11 @@ class NMF_SO(NMF):
                 S_best = S.copy()
 
         self.C_, self.S_, self.obj_fun_ = C_best, S_best, obj_fun_best
+
+        # residual spatial image (spatial image of RSME)
+        self.E_ = np.sqrt( np.mean((X - self.C_@self.S_.T)**2, axis=1) )
+        self.E_ = self.E_.reshape(self.num_x, self.num_y)
+
         return self
 
 class NMF_ARD_SO(NMF_SO):
@@ -394,63 +359,40 @@ class NMF_ARD_SO(NMF_SO):
 
         Parameters
         ----------
-        n_components : int or None
-            The number of components
-        wo : float, default 0.1
+        n_components : int
+        The number of components
+        wo : float, optional (default = 0.1)
             Weight of orthogonal penalty.
             The value should be between 0 and 1.
-        reps : int, default 3
+        reps : int, optional (default = 3)
             The number of initializations
-        max_itr : int, default 200
+        max_itr : int, optional (default = 200)
             The maximum number of update iterations
-        min_itr : int, default 10
+        min_itr : int, optional (default = 10)
             The minimum number of update iterations
-        alpha: float, default 1+10**(-15)
+        alpha: float, optional (default = 1e-15)
             Sparseness parameter, which must be over than 1
-        threshold_merge: float, default 0.99
-            The threshold of similarity between components to judge components should be merged.
-        flag_nonneg: Boolean, default True
-            If False, spectrum intensities can be negative values
-        random_seed : int, default 0
+        threshold_merge: float, optional (default = 0.99)
+            The threshold of similarity between components to judge components should be merged
+        random_seed : int, optional (default = 0)
             Random number generator seed control
 
         Attributes
         ----------
-        C_ : array-like of shape(#spatial data points, n_components)
-            Component intensities decomposed from data matrix X
-        S_ : array-like of shape(#spectrum channels, n_components)
-            Spectra decomposed from data matrix X
-        obj_fun_ : array-like of shape(#iterations,)
+        C_ : ndarray of shape = (# of spatial data points, n_components)
+            Spatial intensity distributions of factorized components
+        S_ : ndarray of shape = (# of spectrum channels, n_components)
+            Factorized component spectra
+        E_ : ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis)
+            Residual spatial image (spatial image of RSME)
+        obj_fun_ : ndarray of shape = (# of iterations)
             Learning curve of reconstruction error (Mean Squared Error)
         beta_ : float
             Sparse penalty parameter (computed from alpha and data X)
-        lambdas_ : array-lile of shape(#iterations,)
+        lambdas_ : ndarray of shape = (# of iterations)
             Learning curve of component intensities
         sigma2_ : float
             Estimation of noise variance
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> X = np.array([[1,1], [2, 1], [3, 1.2], [4, 1], [5, 0.8], [6, 1]])
-        >>> model = NMF_ARD_SO(n_components=2, wo = 0.1)
-        >>> model.fit(X)
-        Training NMF with ARD and Soft Orthogonal constraint....
-        1th iteration of NMF-ARD-SO algorithm
-        2th iteration of NMF-ARD-SO algorithm
-        3th iteration of NMF-ARD-SO algorithm
-
-        NMF_ARD_SO(n_components=2, wo=0.1, reps=3, max_itr=100, random_seed=0)
-        >>> model.C_
-        array([[0.        , 1.31254938],
-               [0.        , 2.21337851],
-               [0.04655829, 3.15615036],
-               [2.88446237, 1.23380528],
-               [5.05090679, 0.        ],
-               [6.07007114, 0.        ]])
-        >>> model.S_
-            array([[0.9869102 , 0.90082913],
-                   [0.16127074, 0.43417379]])
 
         References
         ----------
@@ -461,17 +403,15 @@ class NMF_ARD_SO(NMF_SO):
          doi: 10.1016/j.ultramic.2016.08.006
     """
 
-    # constructor
     def __init__(self, n_components, wo=0.1, reps=3, max_itr=100, min_itr=10,
-                 alpha=1+10**(-15), threshold_merge=0.99, random_seed=0, flag_nonneg=True):
+                 alpha=1+10**(-15), threshold_merge=0.99, random_seed=0):
         super(NMF_ARD_SO, self).__init__(
             n_components=n_components,
             wo=wo,
             reps=reps,
             max_itr=max_itr,
             min_itr=min_itr,
-            random_seed=random_seed,
-            flag_nonneg=flag_nonneg)
+            random_seed=random_seed)
         self.alpha = alpha
         self.threshold_merge = threshold_merge
 
@@ -491,12 +431,12 @@ class NMF_ARD_SO(NMF_SO):
 
         Parameters
         ----------
-        X: array-like of shape(#spatial data points of x, #that of y, #spectrum channels)
+        X: ndarray, shape ``(# of spatial data points in the 1st axis, # of those in 2nd axis, # of spectrum channels)``
             Data matrix to be decomposed
-        channel_vals: array-like of shape(#spectrum channels, )
-            The sequence of channel numbers, or unit values
+        channel_vals: ndarray, shape ``(# of spectrum channels)``
+            The sequence of channel values
         unit_name: string
-            The unit of the spectrum channel
+            The unit name of spectrum channel
 
         Returns
         -------
@@ -504,9 +444,9 @@ class NMF_ARD_SO(NMF_SO):
 
         """
 
-        eps = np.finfo(np.float64).eps  # tiny value
+        eps = np.finfo(np.float64).eps  # tiny value (Machine limits for floating point types)
 
-        # --- Attribute initialization from a data matrix------
+        # initialize attributes from the given spectrum imaging data
         if X.ndim == 2:
             self.num_y = 1
             self.num_x, self.num_ch = X.shape
@@ -514,8 +454,7 @@ class NMF_ARD_SO(NMF_SO):
         else:
             self.num_x, self.num_y, self.num_ch = X.shape
             self.num_xy = self.num_x * self.num_y
-            # transform from 3D-array to 2D-array (Data Matrix)
-            X = X.reshape(self.num_xy, self.num_ch)
+            X = X.reshape(self.num_xy, self.num_ch) # transform from 3D-array to 2D-array (Data Matrix)
 
         if channel_vals is None:
             self.channel_vals = np.arange(self.num_ch)
@@ -525,7 +464,6 @@ class NMF_ARD_SO(NMF_SO):
             self.unit_name = 'Channel'
         else:
             self.unit_name = unit_name
-        # -----------------------------------------------------
 
         mu_x = np.mean(X)
         self.beta_ = mu_x * (self.alpha - 1) * np.sqrt(self.num_ch) / self.n_components
@@ -534,7 +472,7 @@ class NMF_ARD_SO(NMF_SO):
 
 
         obj_best = np.inf  # to deposit the best object value
-        print('Training NMF with ARD and Soft Orthogonal constraint....')
+        print('Training NMF with ARD and soft orthogonal constraint....')
         for rep in range(self.reps):
             print(str(rep+1) + 'th iteration of NMF-ARD-SO algorithm')
 
@@ -562,8 +500,7 @@ class NMF_ARD_SO(NMF_SO):
                 C2 = C.T @ C
                 for j in range(self.n_components):
                     S[:, j] = XC[:, j] - S @ C2[:, j] + C2[j, j] * S[:, j]
-                    if self.flag_nonneg:
-                        S[:, j] = (S[:, j] + np.abs(S[:, j])) / 2  # replace negative values with zeros
+                    S[:, j] = (S[:, j] + np.abs(S[:, j])) / 2  # replace negative values with zeros
                     c = (np.sqrt(S[:, j].T @ S[:, j]))  # normalize
                     if c > 0:
                         S[:, j] = S[:, j] / c
@@ -638,6 +575,10 @@ class NMF_ARD_SO(NMF_SO):
         X_est = self.C_ @ self.S_.T  # reconstructed data matrix
         self.sigma2_ = np.mean((X - X_est) ** 2)
 
+        # residual spatial image (spatial image of RSME)
+        self.E_ = np.sqrt( np.mean((X - X_est)**2, axis=1) )
+        self.E_ = self.E_.reshape(self.num_x, self.num_y)
+
         return self
 
     def plot_ard(self, figsize=None, filename=None):
@@ -646,10 +587,11 @@ class NMF_ARD_SO(NMF_SO):
 
         Parameters
         ----------
-        figsize: sequence of two ints
-            the vertical and horizontal size of the figure
-        filename: string
-            file name of an output image
+        figsize: list[int,int], shape ``(the size of horizontal axis, that of vertical axis)``, optional
+            Figure size of vertical and horizontal axis
+        filename: string, optional
+            The file name of an output image
+            If None, the image is not saved to a file. 
         """
 
         if figsize is None:
@@ -658,7 +600,7 @@ class NMF_ARD_SO(NMF_SO):
             plt.figure(figsize=figsize)
         for k in range(self.n_components):
             plt.plot(self.lambdas_[:, k], label=str(k + 1))
-        plt.xlabel('Iterations')
+        plt.xlabel('The number of iterations')
         plt.ylabel('Component intensity')
         plt.xlim([0, self.lambdas_.shape[0]-1])
         plt.legend()
@@ -668,3 +610,416 @@ class NMF_ARD_SO(NMF_SO):
             plt.show()
         else:
             plt.savefig(filename)
+
+class BetaNMF(NMF):
+    """Non-Negative Matrix Factorization with beta-divergence
+
+    Parameters
+    ----------
+    n_components : int
+        The number of components
+    beta : float
+           Parameter of divergence
+           The value should be between -1 and 1.
+    reps : int, optional (default = 3)
+        The number of initializations
+    max_itr : int, optional (default = 200)
+        The number of update iterations
+    min_itr : int, optional (default = 10)
+        The minimum number of update iterations
+    flag_random_init_C: bool, optional (default = True)
+        Initialize C_ by random numbers.
+        If False, initial C_ is set to same values.
+    random_seed : int, optional (default = 0)
+        Random number generator seed control
+
+    Attributes
+    ----------
+    C_ : ndarray of shape = (# of spatial data points, n_components)
+        Spatial intensity distributions of factorized components
+    S_ : ndarray of shape = (# of spectrum channels, n_components)
+        Factorized component spectra
+    E_ : ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis)
+        Residual spatial image (spatial image of beta-divergence)
+    obj_fun_ : ndarray of shape = (# of iterations)
+        Learning curve of reconstruction error (beta-divergence)
+
+    References
+    ----------
+     Keigo Kimura, Mineichi Kudo, Yuzuru Tanaka,
+     "A column-wise update algorithm for nonnegative matrix factorization in Bregman divergence with an orthogonal constraint",
+     Machine Learning, 103(2), 285-306, 2016.
+     doi: doi.org/10.1007/s10994-016-5553-0
+
+     Liangda Li, Guy Lebanon, Haesun Park, 
+     "Fast Bregman divergence NMF using Taylor expansion and coordinate descent",
+     Proc of KDD2012, 307–315, 2012.
+
+     Andrzej Cichocki , Rafal Zdunek , Anh Huy Phan , Shun-ichi Amari,
+     Nonnegative Matrix and Tensor Factorizations: Applications to Exploratory Multi-way Data Analysis and Blind Source Separation,
+     Wiley Publishing, 2009.
+
+     Motoki Shiga, Shunsuke. Muto, 
+     "Non-negative matrix factorization and its extensions for spectral image data analysis", 
+     e-Journal of Surface Science and Nanotechnology, 2019. (Accepted)
+
+    """
+
+
+    def __init__(self, n_components, beta, reps=3, max_itr=100, min_itr=10, flag_random_init_C=True, random_seed=0):
+        super(BetaNMF, self).__init__(
+            n_components=n_components,
+            reps=reps,
+            max_itr=max_itr,
+            min_itr=min_itr,
+            random_seed=random_seed)
+        self.beta = beta
+        self.flag_random_init_C = flag_random_init_C
+        if (beta<-1)|(beta>1):
+            print('Beta of the divergence parameter should be between -1 and +1!')
+
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        txt = 'n_components=' + str(self.n_components) + ', beta=' + str(self.beta) \
+              + ', reps=' + str(self.reps) + ', max_itr=' + str(self.max_itr) + ', min_itr=' + str(self.min_itr) \
+              + ', flag_random_C=' + str(self.flag_random_C) + ', random_seed=' + str(self.random_seed)
+        return '%s(%s)' % (class_name, txt,)
+
+    def __str__(self):
+        txt = self.__repr__()
+        return txt
+
+    def fit(self, X, channel_vals=None, unit_name=None):
+        """Learn a BetaNMF model for spectral imaging X.
+
+        Parameters
+        ----------
+        X: ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis, # of spectrum channels)
+            Data matrix to be decomposed
+        channel_vals: ndarray of shape = (# of spectrum channels), optional (default = None)
+            The sequence of channel values
+        unit_name: string, optional (default = None)
+            The unit name of spectrum channel
+
+        Returns
+        -------
+        self: instance of class BetaNMF
+
+        """
+
+        # tiny value (Machine limits for floating point types)
+        eps = np.finfo(np.float64).eps
+        if np.min(X)==0:
+            X = X + eps
+
+        # initialize attributes from the given spectrum imaging data
+        if X.ndim == 2:
+            self.num_y = 1
+            self.num_x, self.num_ch = X.shape
+            self.num_xy = self.num_x * self.num_y
+        else:
+            self.num_x, self.num_y, self.num_ch = X.shape
+            self.num_xy = self.num_x * self.num_y
+            X = X.reshape(self.num_xy, self.num_ch) # transform from 3D-array to 2D-array (Data Matrix)
+
+        if channel_vals is None:
+            self.channel_vals = np.arange(self.num_ch)
+        else:
+            self.channel_vals = channel_vals
+        if unit_name is None:
+            self.unit_name = 'Channel'
+        else:
+            self.unit_name = unit_name
+
+        obj_best = np.inf
+        random.seed(self.random_seed)  # set the random seed
+        print('Training NMF with beta-divergence....')
+        for rep in range(self.reps):
+            print(str(rep + 1) + 'th iteration of BetaNMF_SO algorithm')
+
+            # initialization
+            obj = np.zeros(self.max_itr)
+            if self.flag_random_init_C:
+                C = np.random.rand(self.num_xy, self.n_components)
+            else:
+                C = np.ones((self.num_xy, self.n_components))
+            for j in range(self.n_components):
+                C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]) + eps)
+            cj = np.sum(C, axis=1)
+            i = np.random.choice(self.num_xy, self.n_components)
+            S = X[i, :].T
+
+            Xk = X - C @ S.T
+            Ck = np.sum(C,axis=1, keepdims=False)
+
+            # main loop
+            for itr in range(self.max_itr):
+
+                X_est = C@S.T
+                if self.beta==-1: #Itakura-Saito divergence
+                    P = 1/(X_est + eps)**2
+                elif self.beta==0: #KL-divergence
+                    P = 1/(X_est + eps)
+                elif self.beta==1: #Euclidian distance
+                    P = 1*np.ones(X_est.shape)
+                else:
+                    P = (X_est + eps)**(self.beta-1)
+
+                for k in range(self.n_components):
+                    Xk = Xk + np.outer(C[:,k],S[:,k])
+
+                    S[:,k] = (P*Xk).T@C[:,k] / (P.T@(C[:,k]**2)+ eps)
+                    S[:,k] = (S[:,k]+np.abs(S[:,k]))/2  + eps
+
+                    Ck = Ck - C[:,k]
+                    h = (P*Xk)@S[:,k]
+                    L = Ck.T@h/(Ck.T@Ck)
+                    C[:,k] = h / (P@(S[:,k]**2)+ eps)
+                    C[:,k] = (C[:,k]+np.abs(C[:,k]))/2 + eps
+                    C[:,k] = C[:,k] / np.sqrt(C[:,k]@C[:,k])
+                    Ck = Ck + C[:,k]
+
+                    Xk = Xk - np.outer(C[:,k], S[:,k])
+
+                # cost function
+                X_est = C @ S.T  # reconstructed data matrix
+                if self.beta==-1:
+                    obj[itr] = np.mean((X + eps)/(X_est + eps) - np.log((X + eps)/(X_est + eps))-1)
+                elif self.beta==0:
+                    obj[itr] = np.mean((X + eps)*np.log((X + eps)/(X_est + eps))- X + X_est)
+                elif self.beta==1: #Euclidian distance
+                    obj[itr] = lin.norm(X - X_est, ord='fro')**2 / X.size
+                else:
+                    obj[itr] = np.mean(1/self.beta/(self.beta+1)*(X**(self.beta+1)-X_est**(self.beta+1)\
+                                - (self.beta+1)*X_est**(self.beta)*(X-X_est)))    
+
+                # check of convergence
+                if (itr > self.min_itr) & (np.abs(obj[itr - 1] - obj[itr]) < 10 ** (-10)):
+                    obj = obj[0:itr-1]
+                    break
+
+            print('# updates: ' + str(itr))
+
+            # choose the best result
+            if obj_best > obj[-1]:
+                obj_best = obj[-1]
+                obj_fun_best = obj.copy()
+                C_best = C.copy()
+                S_best = S.copy()
+
+        self.C_, self.S_, self.obj_fun_ = C_best, S_best, obj_fun_best
+
+        # residual spatial image (spatial image of beta-divergence)
+        X_est = self.C_ @ self.S_.T  # reconstructed data matrix
+        if self.beta==-1:
+            self.E_ = np.mean((X + eps)/(X_est + eps) - np.log((X + eps)/(X_est + eps))-1, axis=1)
+        elif self.beta==0:
+            self.E_ = np.mean((X + eps)*np.log((X + eps)/(X_est + eps))- X + X_est, axis=1)
+        elif self.beta==1: #Euclidian distance
+            self.E_ = np.mean((X - self.C_@self.S_.T)**2, axis=1)
+        else:
+            self.E_ = np.mean(1/self.beta/(self.beta+1)*(X**(self.beta+1)-X_est**(self.beta+1)\
+                        - (self.beta+1)*X_est**(self.beta)*(X-X_est)), axis=1)  
+        self.E_ = self.E_.reshape(self.num_x, self.num_y)
+
+        return self
+
+class BetaNMF_SO(BetaNMF):
+    """Non-Negative Matrix Factorization with beta-divergence and soft orthogonality constraint
+
+    Parameters
+    ----------
+    n_components : int
+        The number of components
+    beta : float
+           Parameter of divergence
+           The value should be between -1 and 1.
+    wo : float, optional (default = 0.1)
+           Weight parameter of orthogonality
+           The value should be between 0 and 1.
+    reps : int, optional (default = 3)
+        The number of initializations
+    max_itr : int, optional (default = 200)
+        The number of update iterations
+    min_itr : int, optional (default = 10)
+        The minimum number of update iterations
+    flag_random_init_C: bool, optional (default = True)
+        Initialize C_ by random numbers.
+        If False, initial C_ is set to same values.
+    random_seed : int, optional (default = 0)
+        Random number generator seed control
+
+    Attributes
+    ----------
+    C_ : ndarray of shape = (# of spatial data points, n_components)
+        Spatial intensity distributions of factorized components
+    S_ : ndarray of shape = (# of spectrum channels, n_components)
+        Factorized component spectra
+    E_ : ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis)
+        Residual spatial image (spatial image of beta-divergence)
+    obj_fun_ : ndarray of shape = (# of iterations)
+        Learning curve of reconstruction error (beta-divergence)
+
+    References
+    ----------
+     Motoki Shiga, Shunsuke. Muto, 
+     "Non-negative matrix factorization and its extensions for spectral image data analysis", 
+     e-Journal of Surface Science and Nanotechnology, 2019. (Accepted)
+    """
+
+    def __init__(self, n_components, beta, wo, reps=3, max_itr=100, min_itr=10, flag_random_init_C=True, random_seed=0):
+        super(BetaNMF_SO, self).__init__(
+            n_components=n_components,
+            beta = beta,
+            reps=reps,
+            max_itr=max_itr,
+            min_itr=min_itr,
+            flag_random_init_C=flag_random_init_C,
+            random_seed=random_seed)
+        self.wo = wo
+
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        txt = 'n_components=' + str(self.n_components) + ', beta=' + str(self.beta) + ', wo=' + str(self.wo) \
+              + ', reps=' + str(self.reps) + ', max_itr=' + str(self.max_itr) + ', min_itr=' + str(self.min_itr) \
+              + ', flag_random_C=' + str(self.flag_random_C) + ', random_seed=' + str(self.random_seed)
+        return '%s(%s)' % (class_name, txt,)
+
+    def __str__(self):
+        txt = self.__repr__()
+        return txt
+
+    def fit(self, X, channel_vals=None, unit_name=None):
+        """Learn a BetaNMF model with soft orthogonality penalty for spectral imaging X.
+
+        Parameters
+        ----------
+        X: ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis, # of spectrum channels)
+            Data matrix to be decomposed
+        channel_vals: ndarray of shape = (# of spectrum channels), optional (default = None)
+            The sequence of channel values
+        unit_name: string, optional (default = None)
+            The unit name of spectrum channel
+
+        Returns
+        -------
+        self: instance of class BetaNMF_SO
+
+        """
+
+        # tiny value (Machine limits for floating point types)
+        eps = np.finfo(np.float64).eps
+        if np.min(X)==0:
+            X = X + eps
+
+        # initialize attributes from the given spectrum imaging data
+        if X.ndim == 2:
+            self.num_y = 1
+            self.num_x, self.num_ch = X.shape
+            self.num_xy = self.num_x * self.num_y
+        else:
+            self.num_x, self.num_y, self.num_ch = X.shape
+            self.num_xy = self.num_x * self.num_y
+            X = X.reshape(self.num_xy, self.num_ch) # transform from 3D-array to 2D-array (Data Matrix)
+
+        if channel_vals is None:
+            self.channel_vals = np.arange(self.num_ch)
+        else:
+            self.channel_vals = channel_vals
+        if unit_name is None:
+            self.unit_name = 'Channel'
+        else:
+            self.unit_name = unit_name
+
+        obj_best = np.inf
+        random.seed(self.random_seed)  # set the random seed
+        print('Training NMF with beta-divergence and soft orthogonality....')
+        for rep in range(self.reps):
+            print(str(rep + 1) + 'th iteration of BetaNMF_SO algorithm')
+
+            # initialization
+            obj = np.zeros(self.max_itr)
+            if self.flag_random_init_C:
+                C = np.random.rand(self.num_xy, self.n_components)
+            else:
+                C = np.ones((self.num_xy, self.n_components))
+            for j in range(self.n_components):
+                C[:, j] = C[:, j] / (np.sqrt(C[:, j].T @ C[:, j]) + eps)
+            cj = np.sum(C, axis=1)
+            i = np.random.choice(self.num_xy, self.n_components)
+            S = X[i, :].T
+
+            Xk = X - C @ S.T
+            Ck = np.sum(C,axis=1, keepdims=False)
+
+            # main loop
+            for itr in range(self.max_itr):
+
+                X_est = C@S.T
+                if self.beta==-1: #Itakura-Saito divergence
+                    P = 1/(X_est + eps)**2
+                elif self.beta==0: #KL-divergence
+                    P = 1/(X_est + eps)
+                elif self.beta==1: #Euclidian distance
+                    P = 1*np.ones(X_est.shape)
+                else:
+                    P = (X_est + eps)**(self.beta-1)
+
+                for k in range(self.n_components):
+                    Xk = Xk + np.outer(C[:,k],S[:,k])
+
+                    S[:,k] = (P*Xk).T@C[:,k] / (P.T@(C[:,k]**2)+ eps)
+                    S[:,k] = (S[:,k]+np.abs(S[:,k]))/2  + eps
+
+                    Ck = Ck - C[:,k]
+                    h = (P*Xk)@S[:,k]
+                    L = Ck.T@h/(Ck.T@Ck)
+                    C[:,k] = (h - self.wo*L*Ck)  / (P@(S[:,k]**2)+ eps)
+                    C[:,k] = (C[:,k]+np.abs(C[:,k]))/2 + eps
+                    C[:,k] = C[:,k] / np.sqrt(C[:,k]@C[:,k])
+                    Ck = Ck + C[:,k]
+
+                    Xk = Xk - np.outer(C[:,k], S[:,k])
+
+                # cost function
+                X_est = C @ S.T  # reconstructed data matrix
+                if self.beta==-1:
+                    obj[itr] = np.mean((X + eps)/(X_est + eps) - np.log((X + eps)/(X_est + eps))-1)
+                elif self.beta==0:
+                    obj[itr] = np.mean((X + eps)*np.log((X + eps)/(X_est + eps))- X + X_est)
+                elif self.beta==1: #Euclidian distance
+                    obj[itr] = lin.norm(X - X_est, ord='fro')**2 / X.size
+                else:
+                    obj[itr] = np.mean(1/self.beta/(self.beta+1)*(X**(self.beta+1)-X_est**(self.beta+1)\
+                                - (self.beta+1)*X_est**(self.beta)*(X-X_est)))    
+
+                # check of convergence
+                if (itr > self.min_itr) & (np.abs(obj[itr - 1] - obj[itr]) < 10 ** (-10)):
+                    obj = obj[0:itr-1]
+                    break
+
+            print('# updates: ' + str(itr))
+
+            # choose the best result
+            if obj_best > obj[-1]:
+                obj_best = obj[-1]
+                obj_fun_best = obj.copy()
+                C_best = C.copy()
+                S_best = S.copy()
+
+        self.C_, self.S_, self.obj_fun_ = C_best, S_best, obj_fun_best
+
+        # residual spatial image (spatial image of beta-divergence)
+        X_est = self.C_ @ self.S_.T  # reconstructed data matrix
+        if self.beta==-1:
+            self.E_ = np.mean((X + eps)/(X_est + eps) - np.log((X + eps)/(X_est + eps))-1, axis=1)
+        elif self.beta==0:
+            self.E_ = np.mean((X + eps)*np.log((X + eps)/(X_est + eps))- X + X_est, axis=1)
+        elif self.beta==1: #Euclidian distance
+            self.E_ = np.mean((X - self.C_@self.S_.T)**2, axis=1)
+        else:
+            self.E_ = np.mean(1/self.beta/(self.beta+1)*(X**(self.beta+1)-X_est**(self.beta+1)\
+                        - (self.beta+1)*X_est**(self.beta)*(X-X_est)), axis=1)  
+        self.E_ = self.E_.reshape(self.num_x, self.num_y)
+
+        return self

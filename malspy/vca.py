@@ -1,5 +1,7 @@
 import numpy as np
 import scipy
+from scipy import spatial, special
+from scipy.sparse.linalg import eigs
 import pandas as pd
 import matplotlib.pyplot as plt
 from .matrix_factorization import RandomMF
@@ -9,18 +11,19 @@ class VCA(RandomMF):
 
     Parameters
     ----------
-    n_components : int or None
-        Number of components, if n_components is not set all features
-        are kept.
+    n_components : int
+        Number of components
+    proj_method : string, optional (default='SVD')
+        projection method of high dimension data ('SVD' or 'PCA')
 
     Attributes
     ----------
-    C_ : array_like of shape (# of spatial data points, n_components)
-        Non-negative components decomposed from data X.
-    S_ : array_like of shape (# of channels, n_components)
-        Non-negative spectra decomposed from data X.
-    Examples
-    --------
+    C_ : ndarray of shape = (# of spatial data points, n_components)
+        Spatial intensity distributions of factorized components
+    S_ : ndarray of shape = (# of spectrum channels, n_components)
+        Factorized component spectra
+    E_ : ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis)
+        Residual spatial image (spatial image of RMSE)
 
     References
     ----------
@@ -30,7 +33,6 @@ class VCA(RandomMF):
      doi: 10.1109/TGRS.2005.844293
     """
 
-    # constructor
     def __init__(self, n_components, proj_method='SVD'):
         self.n_components = n_components
         self.proj_method = proj_method
@@ -46,12 +48,26 @@ class VCA(RandomMF):
         return txt
 
     def fit(self, X, channel_vals=None, unit_name=None):
-        """
-        :param X: matrix with dimensions,  (# of pixels) x (# ofchannels)
-        :param p: positive integer number of endmembers
+        """Learn VCA model (to find endmembers of pure spectra)
+
+        Parameters
+        ----------
+        X: ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis, # of spectrum channels)
+            Data matrix to be decomposed
+        channel_vals: ndarray of shape = (# of spectrum channels), optional (default = None)
+            The sequence of channel values
+        unit_name: string, optional (default = None)
+            The unit name of spectrum channel
+
+        Returns
+        -------
+        self: instance of class VCA
         """
 
-        # --- Attribute initialization from a data matrix------
+        # tiny value (Machine limits for floating point types)
+        eps = np.finfo(np.float64).eps
+
+        # initialize attributes from the given spectrum imaging data
         if X.ndim == 2:
             self.num_y = 1
             self.num_x, self.num_ch = X.shape
@@ -59,8 +75,7 @@ class VCA(RandomMF):
         else:
             self.num_x, self.num_y, self.num_ch = X.shape
             self.num_xy = self.num_x * self.num_y
-            # transform from 3D-array to 2D-array (Data Matrix)
-            X = X.reshape(self.num_xy, self.num_ch)
+            X = X.reshape(self.num_xy, self.num_ch) # transform from 3D-array to 2D-array (Data Matrix)
 
         if channel_vals is None:
             self.channel_vals = np.arange(self.num_ch)
@@ -70,12 +85,11 @@ class VCA(RandomMF):
             self.unit_name = 'Channel'
         else:
             self.unit_name = unit_name
-        # -----------------------------------------------------
 
         R = X.T
         # Projection to remove observation noise
         if self.proj_method=='PCA':    # effective when small SNR
-            print('PCA...')
+            print('Runing dimension reduction by PCA...')
             d = self.n_components - 1
             r_bar = np.mean(R, axis=1, keepdims=True)
             R0 = R - r_bar # data with zero-mean
@@ -87,7 +101,7 @@ class VCA(RandomMF):
             c = np.sqrt(np.max(np.sum(Xp**2, axis=0)))
             Y = np.r_[Xp, c*np.ones((1,self.num_xy))]
         elif self.proj_method=='SVD':  # effective when large SNR
-            print('SVD...')
+            print('Runing dimension reduction by SVD...')
             d = self.n_components
             # Ud, Sd, Vd = scipy.sparse.linalg.svds(R@R.T/self.num_xy,d)  # computes the d-projection matrix
             Ud, Sd, Vd = scipy.linalg.svd(R@R.T/self.num_xy)  # computes the d-projection matrix
@@ -101,6 +115,7 @@ class VCA(RandomMF):
             return
 
         #--- VCA main ---
+        print('Training VCA...')
         indice = np.zeros(self.n_components)
         indice = indice.astype(np.int64)
         A = np.zeros((self.n_components,self.n_components))
@@ -119,21 +134,25 @@ class VCA(RandomMF):
         self.C_ = X @ np.linalg.pinv(self.S_).T
         self.C_ = (self.C_ + np.abs(self.C_))*0.5
 
+        # residual spatial image (spatial image of RSME)
+        self.E_ = np.sqrt( np.mean((X - self.C_@self.S_.T)**2, axis=1) )
+        self.E_ = self.E_.reshape(self.num_x, self.num_y)
+
         return self
 
     def plot_spectra_original(self, figsize=None, filename=None, normalize=True):
-        '''
-        Plot observed spectra of pure components determinined by VCA
+        """Plot component spectra by picking from observed spectra
 
         Parameters
         ----------
-        figsize: 
-            the vertical and horizontal size of the figure
-        filename: string
-            file name of an output image
-        normalize: Boolean, default True
-            If true, each spectrum is normalized
-        '''
+        figsize: list of shape = (the size of horizontal axis, that of vertical axis), optional (default = None)
+            Size of horizontal axis and vertical axis of figure
+        filename: string, optional (default = None)
+            The file name of an output image
+        normalize: bool, optional (default = True)
+            If True, each spectrum is normalized
+        """
+
         if figsize is None:
             plt.figure()
         else:
@@ -153,25 +172,173 @@ class VCA(RandomMF):
         if filename is None:
             plt.show()
         else:
-            plt.savefig(filename)
+            plt.savefig(filename, bbox_inches='tight', pad_inches=0)
+            plt.close()
 
-    def save_spectra_original_to_csv(self, filename, normalize=True):
-        """Save numerical values of component original spectra to a csv file
+class NFINDER(RandomMF):
+    """NFinder
+
+    Find pure component spectra by NFinder algorithm
+
+    Parameters
+    ----------
+    n_components : int
+        Number of components
+    max_itr : int, optional (default = 5000)
+        The number of update iterations
+
+    Attributes
+    ----------
+    C_ : ndarray of shape = (# of spatial data points, n_components)
+        Spatial intensity distributions of factorized components
+    S_ : ndarray of shape = (# of spectrum channels, n_components)
+        Factorized component spectra
+    E_ : ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis)
+        Residual spatial image (spatial image of RMSE)
+
+    Reference
+    -------
+    M. Winter, “Fast autonomous spectral end-member determination in
+    hyperspectral data,” Proc. of 13th Int. Conf. on Appl. Geologic Remote
+    Sens., Vancouver, BC, Apr. 1999, vol. 2, pp. 337–344.
+    """
+
+    # constructor
+    def __init__(self, n_components, max_itr=5000):
+        self.n_components = n_components
+        self.max_itr = max_itr
+
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        txt = 'n_components=' + str(self.n_components) + ', max_itr=' + str(self.max_itr)
+        return '%s(%s)' % (class_name, txt,)
+
+    def __str__(self):
+        txt = self.__repr__()
+        return txt
+
+    def nfindr(self, x_proj):
+        """ NFinder 
+        
+        Parameters
+        ----------
+        x_proj : ndarray of  shape = (# of pixels, # of reduced channels)
+            Projected data matrix
+        
+        Returns
+        -------
+        endm : ndarray of shape = (# of projected channels, # of end members)
+            end member vectors
+
+        """
+
+        # data size
+        Nb_pix, Nb_bandes = x_proj.shape
+
+        Nb_endm = Nb_bandes+1
+
+        #enveloppe QHULL
+        # print(' -- convex hull')
+        if Nb_bandes>1:
+            hull = spatial.ConvexHull(x_proj)
+            ind = hull.vertices
+        else:
+            ind = np.array([np.argmin(x_proj),np.argmax(x_proj)])
+        envlp = x_proj[ind,:]
+        Nb_sommet, Nb_bandes = envlp.shape
+        
+        # choix de Nb_endm pixels
+        ind_perm = np.random.permutation(Nb_sommet)
+        combi = np.sort(ind_perm[:Nb_endm])
+
+        # candidate
+        candidat_n = (envlp[combi,:Nb_bandes]).T
+        critere_n = - np.abs( np.linalg.det( np.r_[candidat_n, np.ones((1,Nb_endm))] ) )
+        candidat_opt = candidat_n
+        critere_opt = critere_n
+
+        # n+1
+        for iter in range(self.max_itr):
+            # candidate
+            ind_perm = np.random.permutation(Nb_sommet)
+            combi = np.sort(ind_perm[:Nb_endm])
+            candidat = (envlp[combi,:Nb_bandes]).T
+            critere = - np.abs( np.linalg.det( np.r_[candidat, np.ones((1,Nb_endm))] ) )
+
+            #test
+            delta_critere = critere-critere_n
+            if delta_critere < 0:
+                critere_n = critere
+                if critere < critere_opt:
+                    critere_opt = critere
+                    candidat_opt = candidat
+        endm = candidat_opt
+        return endm
+
+    def fit(self, X, channel_vals=None, unit_name=None):
+        """ Find endmembers
 
         Parameters
         ----------
-        filename: string
-            file name of an output image
-        normalize: Boolean, default True
-            If true, each spectrum is normalized
+        X: ndarray of shape = (# of spatial data points in the 1st axis, # of those in 2nd axis, # of spectrum channels)
+            Data matrix to be decomposed
+        channel_vals: ndarray of shape = (# of spectrum channels), optional (default = None)
+            The sequence of channel values
+        unit_name: string, optional (default = None)
+            The unit name of spectrum channel
+
+        Returns
+        -------
+        self: instance of class NFINDER
         """
 
-        Sk = self.S_ori_.copy()
-        if normalize:
-            for k in range(Sk.shape[1]):
-                Sk[:, k] = Sk[:, k] / (np.sqrt(np.sum(Sk[:, k]**2)) + 1e-16)
-        ks = ['Comp_'+str(k+1) for k in range(Sk.shape[1])]
-        c = [self.unit_name] + ks
-        df = pd.DataFrame(np.c_[self.channel_vals, Sk],columns=c)
-        df.to_csv(filename+'.csv',index=False)
+        # tiny value (Machine limits for floating point types)
+        eps = np.finfo(np.float64).eps
+
+        # initialize attributes from the given spectrum imaging data
+        if X.ndim == 2:
+            self.num_y = 1
+            self.num_x, self.num_ch = X.shape
+            self.num_xy = self.num_x * self.num_y
+        else:
+            self.num_x, self.num_y, self.num_ch = X.shape
+            self.num_xy = self.num_x * self.num_y
+            X = X.reshape(self.num_xy, self.num_ch) # transform from 3D-array to 2D-array (Data Matrix)
+
+        if channel_vals is None:
+            self.channel_vals = np.arange(self.num_ch)
+        else:
+            self.channel_vals = channel_vals
+        if unit_name is None:
+            self.unit_name = 'Channel'
+        else:
+            self.unit_name = unit_name
+
+        L_red = self.n_components-1
+
+        print('Training N-Finder...')
+
+        # projection by PCA
+        X_bar = np.mean(X, axis=0, keepdims=True)
+        Rmat = X - X_bar
+        Rmat = Rmat.T@Rmat
+        D, vect_prop = eigs(Rmat, L_red)
+        vect_prop = np.real(vect_prop)
+        V = (vect_prop[:, :L_red]).T # first L_red eigenvectors
+        matU, matP = V, V.T # projector and inverse projector
+        x_proj = (X - X_bar)@matP # projection
+
+        # Endmember findings by N-Finder
+        endm_proj = self.nfindr(x_proj)
+        self.S_ = (endm_proj.T @ matU).T + X_bar.T
+
+        # Optimize intensity distributions of components by Least-Squares fitting
+        self.C_ = X @ np.linalg.pinv(self.S_).T
+        self.C_ = (self.C_ + np.abs(self.C_))*0.5
+
+        # residual spatial image (spatial image of RSME)
+        self.E_ = np.sqrt( np.mean((X - self.C_@self.S_.T)**2, axis=1) )
+        self.E_ = self.E_.reshape(self.num_x, self.num_y)
+
+        return self
 

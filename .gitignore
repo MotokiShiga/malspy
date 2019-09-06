@@ -108,3 +108,5 @@ venv.bak/
 
 # test code and data
 mytest/
+
+mytools/
