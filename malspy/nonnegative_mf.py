@@ -682,7 +682,7 @@ class BetaNMF(NMF):
         class_name = self.__class__.__name__
         txt = 'n_components=' + str(self.n_components) + ', beta=' + str(self.beta) \
               + ', reps=' + str(self.reps) + ', max_itr=' + str(self.max_itr) + ', min_itr=' + str(self.min_itr) \
-              + ', flag_random_C=' + str(self.flag_random_C) + ', random_seed=' + str(self.random_seed)
+              + ', flag_random_C=' + str(self.flag_random_init_C) + ', random_seed=' + str(self.random_seed)
         return '%s(%s)' % (class_name, txt,)
 
     def __str__(self):
@@ -882,7 +882,7 @@ class BetaNMF_SO(BetaNMF):
         class_name = self.__class__.__name__
         txt = 'n_components=' + str(self.n_components) + ', beta=' + str(self.beta) + ', wo=' + str(self.wo) \
               + ', reps=' + str(self.reps) + ', max_itr=' + str(self.max_itr) + ', min_itr=' + str(self.min_itr) \
-              + ', flag_random_C=' + str(self.flag_random_C) + ', random_seed=' + str(self.random_seed)
+              + ', flag_random_C=' + str(self.flag_random_init_C) + ', random_seed=' + str(self.random_seed)
         return '%s(%s)' % (class_name, txt,)
 
     def __str__(self):
