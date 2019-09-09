@@ -735,7 +735,7 @@ class BetaNMF(NMF):
         random.seed(self.random_seed)  # set the random seed
         print('Training NMF with beta-divergence....')
         for rep in range(self.reps):
-            print(str(rep + 1) + 'th iteration of BetaNMF_SO algorithm')
+            print(str(rep + 1) + 'th iteration of BetaNMF algorithm')
 
             # initialization
             obj = np.zeros(self.max_itr)
@@ -1023,3 +1023,4 @@ class BetaNMF_SO(BetaNMF):
         self.E_ = self.E_.reshape(self.num_x, self.num_y)
 
         return self
+
