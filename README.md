@@ -17,4 +17,4 @@ Please cite [3] and [5] if someone uses this package in research publications.
 
 [4] K. Kimura, M. Kudo, and Y. Tanaka, "A column-wise update algorithm for nonnegative matrix factorization in Bregman divergence with an orthogonal constraint", Machine Learning, 103(2), 285-306, 2016.
 
-[5] M. Shiga and S. Muto, "Non-negative matrix factorization and its extensions for spectral image data analysis", e-Journal of Surface Science and Nanotechnology, 2019. (Accepted)
+[5] M. Shiga and S. Muto, "Non-negative matrix factorization and its extensions for spectral image data analysis", e-Journal of Surface Science and Nanotechnology, 17, 148-154, 2019.

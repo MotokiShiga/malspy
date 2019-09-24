@@ -661,7 +661,7 @@ class BetaNMF(NMF):
 
      Motoki Shiga, Shunsuke. Muto, 
      "Non-negative matrix factorization and its extensions for spectral image data analysis", 
-     e-Journal of Surface Science and Nanotechnology, 2019. (Accepted)
+     e-Journal of Surface Science and Nanotechnology, 17, 148-154, 2019.
 
     """
 
@@ -864,7 +864,7 @@ class BetaNMF_SO(BetaNMF):
     ----------
      Motoki Shiga, Shunsuke. Muto, 
      "Non-negative matrix factorization and its extensions for spectral image data analysis", 
-     e-Journal of Surface Science and Nanotechnology, 2019. (Accepted)
+     e-Journal of Surface Science and Nanotechnology, 17, 148-154, 2019.
     """
 
     def __init__(self, n_components, beta, wo, reps=3, max_itr=100, min_itr=10, flag_random_init_C=True, random_seed=0):
