@@ -134,6 +134,28 @@ class RandomMF(object):
             plt.savefig(filename, bbox_inches='tight', pad_inches=0)
             plt.close()
 
+    def plot_component(self, figsize=list(), filename=None):
+        '''
+        Plot component intensities (data points vs intensities)
+        Parameters
+        ----------
+        figsize: the vertical and horizontal size of the figure
+        '''
+        if len(figsize) == 0:
+            plt.figure()
+        else:
+            plt.figure(figsize=figsize)
+        for k in range(self.C_.shape[1]):
+            plt.plot(self.C_[:, k], label=str(k + 1))
+        plt.xlim([0, self.C_.shape[0]])
+        plt.xlabel('Spatial data point')
+        plt.ylabel('Intensity')
+        plt.title('Components')
+        plt.legend()
+        if filename is not None:
+            plt.savefig(filename)
+        plt.show()
+
     def imshow_component(self, figsize=None, figshape=None, filename=None):
         """Display component spatial intensity distributions
 
