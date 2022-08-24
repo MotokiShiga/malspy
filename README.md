@@ -1,7 +1,7 @@
 # MALSpy
 Python package for MAchine Learning based Spectral imaging data analysis
 
-<b>Author</b>: Motoki Shiga (shiga_m at gifu-u.ac.jp)
+<b>Author</b>: Motoki Shiga (motoki.shiga.b4 at tohoku.ac.jp)
 
 This package provides major spectral imaging analysis methods based on machine learning such as SVD, PCA, VCA<sup>[1]</sup>, NMF<sup>[2]</sup>, NMF-SO<sup>[3]</sup>, NMF-ARD-SO<sup>[3]</sup>. 
 In the new version (0.4.0), BetaNMF<sup>[4,5]</sup> and BetaNMF_SO<sup>[5]</sup>, which assumes a generalized noise model of beta-divergence including  Poisson noise model and Gaussian noise model, have been added. Please enjoy demo (example/demo.ipynb).
